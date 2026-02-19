@@ -1,0 +1,13 @@
+
+# Compiled Binaries
+*.exe
+*.o
+*.obj
+
+# Libraries (Users should install these themselves)
+eigen-5.0.1/
+llvm-project/
+
+# Folders
+build/
+.vscode/

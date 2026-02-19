@@ -1,111 +1,79 @@
-#ifndef VEC_LIB_HPP
-#define VEC_LIB_HPP
+#ifndef VECLIB_HPP
+#define VECLIB_HPP
 
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 #include <vector>
-#include <cmath>
-#include <numeric>
 #include <functional>
-#include <stdexcept>
+#include <cmath>
+#include <iostream>
 
 namespace VecLib {
-    using Vector = std::vector<double>;
 
-    // Notation: Norm - L2 Magnitude
-    static double Norm(const Vector& V) {
-        double sum = 0;
-        for (double x : V) sum += x * x;
-        return std::sqrt(sum);
-    }
+    // --- Type Definitions ---
+    using Vector3 = Eigen::Vector3d;
+    using VectorX = Eigen::VectorXd;
+    using MatrixX = Eigen::MatrixXd;
+    using ScalarFunc = std::function<double(double)>;
+    using FieldFunc = std::function<VectorX(VectorX)>;
 
-    // Notation: unit_vector()
-    static Vector unit_vector(const Vector& V) {
-        double n = Norm(V);
-        if (n < 1e-12) return V; 
-        Vector res = V;
-        for (double& x : res) x /= n;
-        return res;
-    }
-
-    // Notation: Dircos - Direction Cosines
-    static Vector Dircos(const Vector& V) {
-        return unit_vector(V); 
-    }
-
-    // Dot Product helper
-    static double Dot(const Vector& A, const Vector& B) {
-        return std::inner_product(A.begin(), A.end(), B.begin(), 0.0);
-    }
-
-    // Notation: Cross Product (3D only)
-    static Vector Cross(const Vector& A, const Vector& B) {
-        if (A.size() != 3 || B.size() != 3) 
-            throw std::invalid_argument("Cross product is defined for 3D vectors.");
-        return {
-            A[1] * B[2] - A[2] * B[1],
-            A[2] * B[0] - A[0] * B[2],
-            A[0] * B[1] - A[1] * B[0]
-        };
-    }
-
+    // --- Vector Algebra ---
+    static double Norm(const VectorX& V) { return V.norm(); }
     
+    static VectorX unit_vector(const VectorX& V) { return V.normalized(); }
+    
+    static VectorX Dircos(const VectorX& V) { return V.normalized(); }
 
-    // Notation: Vector_TP - Vector Triple Product A x (B x C)
-    static Vector Vector_TP(const Vector& A, const Vector& B, const Vector& C) {
-        return Cross(A, Cross(B, C));
+    static Vector3 Vector_TP(const Vector3& A, const Vector3& B, const Vector3& C) {
+        return A.cross(B.cross(C));
     }
 
-    // Notation: Proj(A,B) - Scalar Projection
-    static double Proj(const Vector& A, const Vector& B) {
-        return Dot(A, B) / Norm(B);
+    static double Proj(const VectorX& A, const VectorX& B) {
+        return A.dot(B.normalized());
     }
 
-    // Notation: Proj_Vec() - Vector Projection
-    static Vector Proj_Vec(const Vector& A, const Vector& B) {
-        double scalar = Dot(A, B) / (Dot(B, B));
-        Vector res = B;
-        for (double& x : res) x *= scalar;
-        return res;
+    static VectorX Proj_Vec(const VectorX& A, const VectorX& B) {
+        return (A.dot(B) / B.squaredNorm()) * B;
     }
 
-    // Notation: Orthogonal()
-    static bool Orthogonal(const Vector& A, const Vector& B) {
-        return std::abs(Dot(A, B)) < 1e-9;
+    static bool Orthogonal(const VectorX& A, const VectorX& B) {
+        return std::abs(A.dot(B)) < 1e-9;
     }
 
-    // Notation: Orthonormal() - Orthogonal and both are unit vectors
-    static bool Orthonormal(const Vector& A, const Vector& B) {
-        return Orthogonal(A, B) && std::abs(Norm(A) - 1.0) < 1e-7 && std::abs(Norm(B) - 1.0) < 1e-7;
+    static bool Orthonormal(const VectorX& A, const VectorX& B) {
+        return Orthogonal(A, B) && std::abs(A.norm() - 1.0) < 1e-7;
     }
 
-    // Notation: Divergence() for vector fields
-    static double Divergence(std::function<Vector(Vector)> F, Vector p) {
+    // --- Matrix Operations ---
+    static void SolveEigen(const MatrixX& M) {
+        Eigen::EigenSolver<MatrixX> solver(M);
+        std::cout << "Eigenvalues:\n" << solver.eigenvalues() << "\n";
+        std::cout << "Eigenvectors:\n" << solver.eigenvectors() << "\n";
+    }
+
+    // --- Vector Calculus ---
+    static double Divergence(FieldFunc F, VectorX p, double h = 1e-5) {
         double div = 0;
-        double h = 1e-5;
-        for (size_t i = 0; i < p.size(); ++i) {
-            Vector p_p = p, p_m = p;
-            p_p[i] += h; p_m[i] -= h;
-            div += (F(p_p)[i] - F(p_m)[i]) / (2.0 * h);
+        for (int i = 0; i < p.size(); ++i) {
+            VectorX p_p = p, p_m = p;
+            p_p(i) += h; p_m(i) -= h;
+            div += (F(p_p)(i) - F(p_m)(i)) / (2.0 * h);
         }
         return div;
     }
 
-    // Notation: Curl() (3D Vector Fields)
-    static Vector Curl(std::function<Vector(Vector)> F, Vector p) {
-        if (p.size() != 3) throw std::invalid_argument("Curl is defined for 3D fields.");
-        double h = 1e-5;
+    static Vector3 Curl(std::function<Vector3(Vector3)> F, Vector3 p, double h = 1e-5) {
         auto partial = [&](int field_comp, int var_idx) {
-            Vector p_p = p, p_m = p;
-            p_p[var_idx] += h; p_m[var_idx] -= h;
-            return (F(p_p)[field_comp] - F(p_m)[field_comp]) / (2.0 * h);
+            Vector3 p_p = p, p_m = p;
+            p_p(var_idx) += h; p_m(var_idx) -= h;
+            return (F(p_p)(field_comp) - F(p_m)(field_comp)) / (2.0 * h);
         };
-
-        return {
-            partial(2, 1) - partial(1, 2), // dFz/dy - dFy/dz
-            partial(0, 2) - partial(2, 0), // dFx/dz - dFz/dx
-            partial(1, 0) - partial(0, 1)  // dFy/dx - dFx/dy
-        };
+        return Vector3(
+            partial(2, 1) - partial(1, 2),
+            partial(0, 2) - partial(2, 0),
+            partial(1, 0) - partial(0, 1)
+        );
     }
+} // End of Namespace VecLib
 
-    
-}
 #endif
